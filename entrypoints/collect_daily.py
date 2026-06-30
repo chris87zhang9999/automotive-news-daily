@@ -12,8 +12,9 @@ from src.collectors.samr import SamrCollector
 from src.collectors.rapex import RapexCollector
 from src.collectors.nhtsa import NhtsaCollector
 from src.collectors.feeds import (
-    GLOBAL_FEEDS, CHINA_FEEDS, EUROPE_FEEDS,
+    NORTH_AMERICA_FEEDS, INTERNATIONAL_FEEDS, CHINA_FEEDS, EUROPE_FEEDS,
     RUSSIA_FEEDS, MIDDLE_EAST_FEEDS, SEA_FEEDS, EAST_ASIA_FEEDS,
+    QUALITY_RECALL_FEEDS,
 )
 from src.filter import filter_and_prioritize
 from src.dedup import deduplicate
@@ -34,13 +35,15 @@ def main() -> int:
 
     raw: list = []
     collectors = [
-        RssCollector(feeds=GLOBAL_FEEDS,      region="全球"),
-        RssCollector(feeds=CHINA_FEEDS,       region="中国"),
-        RssCollector(feeds=EUROPE_FEEDS,      region="欧洲"),
-        RssCollector(feeds=RUSSIA_FEEDS,      region="俄罗斯/中亚"),
-        RssCollector(feeds=MIDDLE_EAST_FEEDS, region="中东"),
-        RssCollector(feeds=SEA_FEEDS,         region="东南亚"),
-        RssCollector(feeds=EAST_ASIA_FEEDS,   region="东亚"),
+        RssCollector(feeds=NORTH_AMERICA_FEEDS,   region="北美"),
+        RssCollector(feeds=INTERNATIONAL_FEEDS,   region="国际"),
+        RssCollector(feeds=CHINA_FEEDS,           region="中国"),
+        RssCollector(feeds=EUROPE_FEEDS,          region="西欧"),
+        RssCollector(feeds=RUSSIA_FEEDS,          region="俄罗斯/中亚"),
+        RssCollector(feeds=MIDDLE_EAST_FEEDS,     region="中东"),
+        RssCollector(feeds=SEA_FEEDS,             region="东南亚"),
+        RssCollector(feeds=EAST_ASIA_FEEDS,       region="东亚"),
+        RssCollector(feeds=QUALITY_RECALL_FEEDS,  region="质量召回"),
         SamrCollector(),
         RapexCollector(),
         NhtsaCollector(),
