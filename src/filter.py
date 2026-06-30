@@ -1,5 +1,8 @@
 """Automotive keyword filter + multi-language priority scoring."""
+import re
 from src.schemas import NewsItem, Priority
+
+_HTML_RE = re.compile(r"<[^>]+>")
 
 LI_AUTO_VARIANTS = [
     "理想汽车", "理想", "aito", "li auto", "lixiang",
@@ -17,7 +20,7 @@ CN_BRANDS: list[tuple[str, str]] = [
     ("长城", "GWM"), ("哈弗", "Haval"),
     ("奇瑞", "Chery"), ("chery", "Chery"),
     ("长安", "Changan"),
-    ("mg", "MG"),
+    ("mg motor", "MG"), ("mg zs", "MG"), ("mg4", "MG"), ("mg5", "MG"), ("mg6", "MG"),
     ("上汽", "SAIC"), ("saic", "SAIC"),
     ("零跑", "Leapmotor"), ("leapmotor", "Leapmotor"),
     ("岚图", "Voyah"), ("voyah", "Voyah"),
@@ -25,8 +28,8 @@ CN_BRANDS: list[tuple[str, str]] = [
     ("深蓝", "Deepal"),
     ("仰望", "Yangwang"),
     ("方程豹", "Fang Cheng Bao"),
-    ("smart", "Smart"),
-    ("坦克", "Tank"), ("tank", "Tank"),
+    ("smart #", "Smart"), ("smart car", "Smart"), ("smart automobile", "Smart"),
+    ("坦克", "Tank"), ("tank suv", "Tank"), ("tank 300", "Tank"), ("tank 500", "Tank"),
 ]
 
 # Flat keyword list for fast membership checks
@@ -49,7 +52,8 @@ AUTO_GENERIC = [
 ]
 
 def _text(item: NewsItem) -> str:
-    return (item.title + " " + item.raw_text).lower()
+    raw = _HTML_RE.sub(" ", item.raw_text)
+    return (item.title + " " + raw).lower()
 
 def _matches_any(text: str, keywords: list[str]) -> bool:
     return any(k in text for k in keywords)
