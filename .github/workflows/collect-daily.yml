@@ -37,7 +37,7 @@ jobs:
         run: uv run python -m entrypoints.collect_daily
 
       - name: Build static site
-        run: uv run python entrypoints/build_site.py
+        run: uv run python -m entrypoints.build_site
 
       - name: Commit reports and seen.json
         run: |
