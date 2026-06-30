@@ -1,63 +1,68 @@
 """Feishu group bot: send one short notification card with site link."""
 import logging
 import httpx
-from src.schemas import NewsItem
 
 logger = logging.getLogger(__name__)
 
-def build_notify_card(items: list[NewsItem], date: str, site_url: str) -> dict:
-    counts = {"P0": 0, "P1": 0, "P2": 0, "P3": 0}
-    for item in items:
-        counts[item.priority] = counts.get(item.priority, 0) + 1
 
-    parts = []
-    if counts["P0"]:
-        parts.append(f"🚨 质量预警 **{counts['P0']}** 条")
-    if counts["P1"]:
-        parts.append(f"⭐ 理想汽车 **{counts['P1']}** 条")
-    if counts["P2"]:
-        parts.append(f"🇨🇳 中国品牌 **{counts['P2']}** 条")
-    if counts["P3"]:
-        parts.append(f"🌍 国际品牌 **{counts['P3']}** 条")
+def build_notify_card(*, date: str, items: list, brief: str = "", site_url: str) -> dict:
+    score3 = sum(1 for it in items if it.score == 3)
+    score2 = sum(1 for it in items if it.score == 2)
+    score1 = sum(1 for it in items if it.score == 1)
+    brief_preview = (brief[:100] + "…") if len(brief) > 100 else brief
 
-    summary_line = "  |  ".join(parts)
-    page_url = f"{site_url.rstrip('/')}?date={date}"
+    if score3 > 0:
+        header_color = "red"
+    elif score2 > 0:
+        header_color = "orange"
+    else:
+        header_color = "blue"
 
     return {
         "msg_type": "interactive",
         "card": {
             "header": {
-                "title": {
-                    "tag": "plain_text",
-                    "content": f"🚗 汽车日报  {date}  |  {len(items)} 条",
-                },
-                "template": "blue",
+                "title": {"tag": "plain_text", "content": f"汽车质量情报 {date}"},
+                "template": header_color,
             },
             "elements": [
                 {
                     "tag": "div",
-                    "text": {"tag": "lark_md", "content": summary_line},
+                    "text": {
+                        "tag": "lark_md",
+                        "content": f"🚨 紧急 **{score3}** 条  ⚠️ 重要 **{score2}** 条  📊 背景 **{score1}** 条",
+                    },
                 },
                 {
+                    "tag": "div",
+                    "text": {"tag": "lark_md", "content": brief_preview},
+                },
+                {"tag": "hr"},
+                {
                     "tag": "action",
-                    "actions": [{
-                        "tag": "button",
-                        "text": {"tag": "plain_text", "content": "📖 查看全文"},
-                        "url": page_url,
-                        "type": "primary",
-                    }],
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "📖 查看完整情报"},
+                            "type": "primary",
+                            "url": f"{site_url}?date={date}",
+                        }
+                    ],
                 },
             ],
         },
     }
 
-def send_notify(items: list[NewsItem], date: str, site_url: str, webhook: str = "", brief: str = "", cfg=None) -> None:
-    if not webhook and cfg is not None:
-        webhook = cfg.feishu_bot_webhook
-    card = build_notify_card(items, date=date, site_url=site_url)
+
+def send_notify(*, cfg, date: str, items: list, brief: str = "", site_url: str) -> None:
+    card = build_notify_card(date=date, items=items, brief=brief, site_url=site_url)
+    webhook = cfg.feishu_bot_webhook
+    if not webhook:
+        logger.warning("FEISHU_BOT_WEBHOOK not set, skipping notification")
+        return
     try:
-        resp = httpx.post(webhook, json=card, timeout=15)
+        resp = httpx.post(webhook, json=card, timeout=10)
         resp.raise_for_status()
-        logger.info("feishu notify sent (%d items)", len(items))
+        logger.info("Feishu notification sent for %s", date)
     except Exception as ex:
-        logger.error("feishu notify failed: %s", ex)
+        logger.warning("Feishu notification failed: %s", ex)
