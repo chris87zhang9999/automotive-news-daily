@@ -66,7 +66,7 @@ def main() -> int:
         log.warning("no fresh items today, skipping report")
         return 0
 
-    summarized = summarize_all(llm, fresh[:TOP_N], max_workers=5)
+    summarized = summarize_all(llm, fresh[:TOP_N * 3], max_workers=5)
     log.info("summarized %d items", len(summarized))
 
     brief = generate_brief(llm, summarized)
