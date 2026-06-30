@@ -84,7 +84,7 @@ def parse_report_md(path: Path) -> dict:
             current_article["market"] = line[len("- 市场:"):].strip()
         # Brief text (lines after ## 今日质量简报, skip empty)
         elif in_brief and line.strip() and not line.startswith("#"):
-            brief = line.strip()
+            brief = (brief + " " + line.strip()).strip()
 
     if current_article:
         articles.append(current_article)

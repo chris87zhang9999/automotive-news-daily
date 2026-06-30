@@ -1,4 +1,5 @@
 import json
+import tempfile
 from pathlib import Path
 from src.site_builder import parse_report_md, build_site
 
@@ -119,3 +120,28 @@ def test_build_site_articles_have_url_not_source_url(tmp_path):
     # The JSON in the page should have "url" key
     assert '"url"' in content
     assert "source.com/article" in content
+
+
+def test_parse_report_md_multiline_brief():
+    content = """# 汽车质量情报日报 2026-06-30
+> 今日收录 1 条 | 紧急 0 · 重要 1 · 背景 0
+
+## 今日质量简报
+
+First sentence of the brief.
+Second sentence continues here.
+
+## ⚠️ 竞品与监管动态
+
+### **[NIO]** NIO recall in Thailand
+> Summary text.
+> **质量含义：** Monitor supplier.
+- 来源: [source.com](https://source.com)
+- 市场: 东南亚
+"""
+    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False, encoding="utf-8") as f:
+        f.write(content)
+        f.flush()
+        result = parse_report_md(Path(f.name))
+    assert "First sentence" in result["brief"]
+    assert "Second sentence" in result["brief"]
