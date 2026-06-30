@@ -35,6 +35,16 @@ CN_BRANDS: list[tuple[str, str]] = [
 # Flat keyword list for fast membership checks
 _CN_BRAND_KEYS = [kw for kw, _ in CN_BRANDS]
 
+# Short English tokens that appear as substrings of common words — require word-boundary match.
+# "nio" appears in "senior", "companion", "opinion", "pinion", "union", etc.
+_WHOLE_WORD_BRAND_KEYS: frozenset[str] = frozenset({"nio", "byd"})
+
+
+def _brand_in_text(text: str, keyword: str) -> bool:
+    if keyword in _WHOLE_WORD_BRAND_KEYS:
+        return bool(re.search(r"\b" + re.escape(keyword) + r"\b", text))
+    return keyword in text
+
 QUALITY_VARIANTS = [
     "召回", "recall", "rückruf", "rappel", "отзыв",
     "استدعاء", "缺陷", "安全隐患", "故障", "投诉",
@@ -67,7 +77,7 @@ def assign_priority(item: NewsItem) -> NewsItem:
     text = _text(item)
     is_quality = _matches_any(text, QUALITY_VARIANTS)
     is_li_auto = _matches_any(text, LI_AUTO_VARIANTS)
-    is_cn = _matches_any(text, _CN_BRAND_KEYS)
+    is_cn = any(_brand_in_text(text, kw) for kw in _CN_BRAND_KEYS)
 
     if is_li_auto and is_quality:
         item.priority = "P0"
@@ -78,7 +88,7 @@ def assign_priority(item: NewsItem) -> NewsItem:
     elif is_cn:
         item.priority = "P2"
         for brand_kw, display_name in CN_BRANDS:
-            if brand_kw in text:
+            if _brand_in_text(text, brand_kw):
                 item.brand = display_name
                 break
     else:

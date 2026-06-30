@@ -29,6 +29,28 @@ _FALLBACK_MARKET_MAP = {
     "国际": "全球",
 }
 
+_MARKET_CANONICAL: frozenset[str] = frozenset({
+    "北美", "西欧", "中欧东欧", "中东", "俄罗斯", "中亚",
+    "东南亚", "韩国", "日本", "澳大利亚", "中国", "全球",
+})
+
+# LLM sometimes ignores the canonical list; normalize before storing.
+_MARKET_NORMALIZE: dict[str, str] = {
+    "欧洲": "西欧", "英国": "西欧", "europe": "西欧", "uk": "西欧",
+    "united kingdom": "西欧", "germany": "西欧", "france": "西欧",
+    "德国": "西欧", "意大利": "西欧", "spain": "西欧",
+    "north america": "北美", "usa": "北美", "united states": "北美", "美国": "北美",
+    "canada": "北美",
+    "russia": "俄罗斯", "俄罗斯/中亚": "俄罗斯",
+    "southeast asia": "东南亚", "sea": "东南亚",
+    "south korea": "韩国", "korea": "韩国",
+    "japan": "日本",
+    "australia": "澳大利亚",
+    "middle east": "中东", "gulf": "中东",
+    "global": "全球",
+    "中东欧": "中欧东欧", "东欧": "中欧东欧", "central europe": "中欧东欧",
+}
+
 
 def _parse_llm_json(raw: str, fallback_region: str = "") -> dict:
     """Parse LLM JSON response; return safe fallback dict on any parse error."""
@@ -43,11 +65,15 @@ def _parse_llm_json(raw: str, fallback_region: str = "") -> dict:
         score = int(data.get("score", 1))
         if score not in (0, 1, 2, 3):
             score = 1
+        market_raw = str(data.get("market", ""))
+        market = _MARKET_NORMALIZE.get(market_raw.lower(), _MARKET_NORMALIZE.get(market_raw, market_raw))
+        if market not in _MARKET_CANONICAL:
+            market = _FALLBACK_MARKET_MAP.get(fallback_region, "全球")
         return {
             "summary": str(data.get("summary", "")),
             "score": score,
             "note": str(data.get("note", "")),
-            "market": str(data.get("market", _FALLBACK_MARKET_MAP.get(fallback_region, "全球"))),
+            "market": market,
         }
     except Exception:
         return {

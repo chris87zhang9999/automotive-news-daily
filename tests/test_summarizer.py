@@ -80,3 +80,27 @@ def test_summarize_all_returns_all_even_with_errors():
     items = [_item("Article 0"), _item("Article 1")]
     result = summarize_all(llm, items)
     assert len(result) == 2
+
+
+def test_parse_llm_json_normalizes_europe_to_west_europe():
+    raw = '{"summary": "Test.", "score": 1, "note": "", "market": "欧洲"}'
+    result = _parse_llm_json(raw)
+    assert result["market"] == "西欧"
+
+
+def test_parse_llm_json_normalizes_uk_to_west_europe():
+    raw = '{"summary": "Test.", "score": 2, "note": "Monitor", "market": "英国"}'
+    result = _parse_llm_json(raw)
+    assert result["market"] == "西欧"
+
+
+def test_parse_llm_json_preserves_canonical_market():
+    raw = '{"summary": "Test.", "score": 1, "note": "", "market": "东南亚"}'
+    result = _parse_llm_json(raw)
+    assert result["market"] == "东南亚"
+
+
+def test_parse_llm_json_unknown_market_falls_back_to_region():
+    raw = '{"summary": "Test.", "score": 1, "note": "", "market": "UnknownRegion"}'
+    result = _parse_llm_json(raw, fallback_region="东南亚")
+    assert result["market"] == "东南亚"

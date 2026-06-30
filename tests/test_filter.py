@@ -77,3 +77,18 @@ def test_filter_preserves_order_by_priority():
     assert result[0].priority == "P0"
     assert result[1].priority == "P2"
     assert result[2].priority == "P3"
+
+
+def test_nio_not_matched_as_substring():
+    # "senior", "companion", "union" all contain "nio" — must not trigger NIO brand
+    item = assign_priority(_item(
+        "Senior motoring groups call for action on speed limit assist",
+        "Motoring companions are united in their opinion on fuel prices.",
+    ))
+    assert item.brand != "NIO"
+
+
+def test_nio_matched_as_whole_word():
+    item = assign_priority(_item("NIO recalls 500 units in Norway due to brake defect"))
+    assert item.brand == "NIO"
+    assert item.priority == "P2"  # Chinese competitor brand, not Li Auto
