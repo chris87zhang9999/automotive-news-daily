@@ -3,7 +3,7 @@ from src.schemas import NewsItem
 
 def _fake_item(url: str, title: str, priority: str = "P3") -> NewsItem:
     item = NewsItem(url=url, title=title, source_name="s",
-                    region="全球", published_at="", raw_text="content")
+                    region="北美", published_at="", raw_text="content")
     item.priority = priority
     item.summary = "100-word English summary."
     return item
