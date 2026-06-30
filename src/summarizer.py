@@ -20,6 +20,8 @@ Analyze the automotive news article and return ONLY valid JSON with these exact 
 - "note": ≤30-word business implication in Chinese for Li Auto quality ops (required when score≥2, empty string otherwise)
 - "market": the specific primary market this article concerns — use one of: 北美/西欧/中欧东欧/中东/俄罗斯/中亚/东南亚/韩国/日本/澳大利亚/中国/全球 (only use 全球 when genuinely multi-region)
 
+CRITICAL for "summary": Always name the ACTUAL brand from the article. NEVER write "Li Auto" in the summary unless Li Auto (理想汽车/Lixiang) is explicitly named — you analyze news FROM Li Auto's viewpoint, not as if Li Auto is the subject of every article. Smart is a Geely/Mercedes brand, NOT Li Auto.
+
 Return only the JSON object, no markdown, no explanation."""
 
 _FALLBACK_MARKET_MAP = {
@@ -86,9 +88,10 @@ def _parse_llm_json(raw: str, fallback_region: str = "") -> dict:
 
 def summarize_item(llm: LLMClient, item: NewsItem) -> NewsItem:
     try:
+        brand_hint = f"Detected brand: {item.brand}\n\n" if item.brand else ""
         raw = llm.chat(
             system=_SYSTEM,
-            user=f"Title: {item.title}\n\nContent: {item.raw_text[:1500]}",
+            user=f"{brand_hint}Title: {item.title}\n\nContent: {item.raw_text[:1500]}",
             max_tokens=350,
             temperature=0.1,
         )

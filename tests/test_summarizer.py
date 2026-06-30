@@ -104,3 +104,14 @@ def test_parse_llm_json_unknown_market_falls_back_to_region():
     raw = '{"summary": "Test.", "score": 1, "note": "", "market": "UnknownRegion"}'
     result = _parse_llm_json(raw, fallback_region="东南亚")
     assert result["market"] == "东南亚"
+
+
+def test_summarize_item_passes_brand_hint_to_llm():
+    llm = MagicMock()
+    llm.chat.return_value = '{"summary": "Smart #6 EHD launched.", "score": 0, "note": "", "market": "中国"}'
+    item = _item()
+    item.brand = "Smart"
+    summarize_item(llm, item)
+    call_kwargs = llm.chat.call_args
+    user_msg = call_kwargs[1]["user"] if call_kwargs[1] else call_kwargs[0][1]
+    assert "Detected brand: Smart" in user_msg
