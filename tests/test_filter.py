@@ -48,6 +48,25 @@ def test_filter_removes_non_automotive():
     result = filter_and_prioritize(items)
     assert len(result) == 2
 
+def test_smart_car_generic_phrase_not_branded_smart():
+    # "smart car" as generic phrase must not assign Smart brand
+    item = assign_priority(_item(
+        "How to Buy or Lease a New Car",
+        "A smart car buyer always compares prices before signing."
+    ))
+    assert item.brand != "Smart"
+
+def test_smart_automobile_matches():
+    item = assign_priority(_item("Smart Automobile unveils new model"))
+    assert item.brand == "Smart"
+
+def test_mg_img_tag_false_positive():
+    # <img> in raw HTML must not trigger MG brand match
+    assert not is_automotive(_item(
+        "Apple launches new iPhone",
+        '<img src="photo.jpg"> A great smartphone.'
+    ))
+
 def test_filter_preserves_order_by_priority():
     items = [
         _item("Toyota new model"),

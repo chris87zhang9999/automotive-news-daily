@@ -28,7 +28,7 @@ CN_BRANDS: list[tuple[str, str]] = [
     ("深蓝", "Deepal"),
     ("仰望", "Yangwang"),
     ("方程豹", "Fang Cheng Bao"),
-    ("smart #", "Smart"), ("smart car", "Smart"), ("smart automobile", "Smart"),
+    ("smart #", "Smart"), ("smart automobile", "Smart"),
     ("坦克", "Tank"), ("tank suv", "Tank"), ("tank 300", "Tank"), ("tank 500", "Tank"),
 ]
 
