@@ -19,6 +19,7 @@ from src.collectors.feeds import (
 from src.filter import filter_and_prioritize
 from src.dedup import deduplicate
 from src.summarizer import summarize_all
+from src.brief import generate_brief
 from src.delivery.feishu import send_notify
 
 logging.basicConfig(level=logging.INFO,
@@ -65,44 +66,68 @@ def main() -> int:
         log.warning("no fresh items today, skipping report")
         return 0
 
-    top = fresh[:TOP_N]
-    summarized = summarize_all(llm, top, max_workers=5)
+    summarized = summarize_all(llm, fresh[:TOP_N], max_workers=5)
     log.info("summarized %d items", len(summarized))
 
-    REPORTS_DIR.mkdir(exist_ok=True)
-    report_path = REPORTS_DIR / f"{today}.md"
-    _write_report(summarized, report_path, today)
+    brief = generate_brief(llm, summarized)
+
+    # Drop score=0 noise before applying TOP_N cap
+    relevant_scored = [it for it in summarized if it.score > 0]
+    top = sorted(
+        relevant_scored,
+        key=lambda x: (-x.score, {"P0": 0, "P1": 1, "P2": 2, "P3": 3}[x.priority])
+    )[:TOP_N]
+
+    report_path = _write_report(top, today, brief, REPORTS_DIR)
     log.info("report saved: %s", report_path)
 
     site_url = os.environ.get("SITE_URL", "https://github.com")
-    send_notify(summarized, webhook=cfg.feishu_bot_webhook, date=today, site_url=site_url)
+    send_notify(cfg=cfg, date=today, items=top, brief=brief, site_url=site_url)
     log.info("feishu notify complete")
     return 0
 
-def _write_report(items, path: Path, date: str) -> None:
-    _SECTION_HEADERS = {
-        "P0": "🚨 质量预警 & 召回",
-        "P1": "⭐ 理想汽车动态",
-        "P2": "🇨🇳 中国品牌出海",
-        "P3": "🌍 国际品牌动态",
-    }
-    lines = [f"# 汽车行业日报 {date}\n", f"> {len(items)} 条新闻\n"]
-    by_prio: dict[str, list] = {p: [] for p in _SECTION_HEADERS}
-    for item in items:
-        by_prio.setdefault(item.priority, by_prio["P3"]).append(item)
-    for prio, header in _SECTION_HEADERS.items():
-        group = by_prio.get(prio, [])
-        if not group:
-            continue
-        lines.append(f"\n## {header}\n")
-        for item in group:
-            brand = f"**[{item.brand}]** " if item.brand else ""
-            lines.append(f"### {brand}{item.title}")
-            lines.append(f"> {item.summary}")
-            lines.append(f"- 来源: [{item.source_name}]({item.url})")
-            lines.append(f"- 地区: {item.region}")
-            lines.append("")
+
+def _write_report(items: list, today: str, brief: str, reports_dir: Path) -> Path:
+    score3 = [it for it in items if it.score == 3]
+    score2 = [it for it in items if it.score == 2]
+    score1 = [it for it in items if it.score == 1]
+    total = len(score3) + len(score2) + len(score1)
+
+    lines = [
+        f"# 汽车质量情报日报 {today}",
+        f"> 今日收录 {total} 条 | 紧急 {len(score3)} · 重要 {len(score2)} · 背景 {len(score1)}",
+        "",
+        "## 今日质量简报",
+        "",
+        brief,
+        "",
+    ]
+
+    def _section(emoji: str, title: str, section_items: list) -> list:
+        if not section_items:
+            return []
+        out = [f"## {emoji} {title}", ""]
+        for it in section_items:
+            display_market = it.market or it.region
+            brand_label = it.brand or "General"
+            out.append(f"### **[{brand_label}]** {it.title}")
+            out.append(f"> {it.summary}")
+            if it.note:
+                out.append(f"> **质量含义：** {it.note}")
+            out.append(f"- 来源: [{it.source_name}]({it.url})")
+            out.append(f"- 市场: {display_market}")
+            out.append("")
+        return out
+
+    lines += _section("🚨", "紧急关注", score3)
+    lines += _section("⚠️", "竞品与监管动态", score2)
+    lines += _section("📊", "市场背景", score1)
+
+    path = reports_dir / f"{today}.md"
+    reports_dir.mkdir(exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
 
 if __name__ == "__main__":
     sys.exit(main())

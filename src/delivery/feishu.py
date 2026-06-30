@@ -51,7 +51,9 @@ def build_notify_card(items: list[NewsItem], date: str, site_url: str) -> dict:
         },
     }
 
-def send_notify(items: list[NewsItem], webhook: str, date: str, site_url: str) -> None:
+def send_notify(items: list[NewsItem], date: str, site_url: str, webhook: str = "", brief: str = "", cfg=None) -> None:
+    if not webhook and cfg is not None:
+        webhook = cfg.feishu_bot_webhook
     card = build_notify_card(items, date=date, site_url=site_url)
     try:
         resp = httpx.post(webhook, json=card, timeout=15)
