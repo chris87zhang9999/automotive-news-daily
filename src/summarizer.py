@@ -38,6 +38,7 @@ def _parse_llm_json(raw: str, fallback_region: str = "") -> dict:
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:]
+            text = text.strip()
         data = json.loads(text)
         score = int(data.get("score", 1))
         if score not in (0, 1, 2, 3):

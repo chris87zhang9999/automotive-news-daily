@@ -18,6 +18,7 @@ def test_main_runs_without_error(tmp_path):
         patch("entrypoints.collect_daily.filter_and_prioritize", return_value=fake_items),
         patch("entrypoints.collect_daily.deduplicate", return_value=fake_items),
         patch("entrypoints.collect_daily.summarize_all", return_value=fake_items),
+        patch("entrypoints.collect_daily.generate_brief", return_value="Test brief."),
         patch("entrypoints.collect_daily.send_notify"),
         patch("entrypoints.collect_daily.load_config",
               return_value=MagicMock(llm_api_key="k", llm_base_url="u",
