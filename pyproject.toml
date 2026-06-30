@@ -1,0 +1,18 @@
+[project]
+name = "automotive-news-daily"
+version = "0.1.0"
+description = "每日全球汽车行业新闻采集 + 智谱摘要 + 飞书推送"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=1.40.0",
+    "feedparser>=6.0.11",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.1",
+    "tenacity>=8.5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3.0", "ruff>=0.6.0"]
+
+[tool.ruff]
+line-length = 100
