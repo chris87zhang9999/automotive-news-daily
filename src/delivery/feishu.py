@@ -45,7 +45,7 @@ def build_notify_card(*, date: str, items: list, brief: str = "", site_url: str)
                             "tag": "button",
                             "text": {"tag": "plain_text", "content": "📖 查看完整情报"},
                             "type": "primary",
-                            "url": f"{site_url}?date={date}",
+                            "url": f"{site_url.rstrip('/')}?date={date}",
                         }
                     ],
                 },
@@ -57,9 +57,6 @@ def build_notify_card(*, date: str, items: list, brief: str = "", site_url: str)
 def send_notify(*, cfg, date: str, items: list, brief: str = "", site_url: str) -> None:
     card = build_notify_card(date=date, items=items, brief=brief, site_url=site_url)
     webhook = cfg.feishu_bot_webhook
-    if not webhook:
-        logger.warning("FEISHU_BOT_WEBHOOK not set, skipping notification")
-        return
     try:
         resp = httpx.post(webhook, json=card, timeout=10)
         resp.raise_for_status()

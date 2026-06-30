@@ -1,5 +1,6 @@
 import json
 from unittest.mock import patch, MagicMock
+from src.config import Config
 from src.schemas import NewsItem
 from src.delivery.feishu import build_notify_card, send_notify
 
@@ -24,16 +25,19 @@ def test_build_notify_card_shows_score_counts():
     assert "⚠️" in body
     assert "📊" in body
     # counts: 1 urgent, 2 important, 3 background
-    assert '"1"' in body or "紧急 **1**" in body or " 1 " in body
+    assert "紧急 **1**" in body
+    assert "重要 **2**" in body
+    assert "背景 **3**" in body
 
 
 def test_build_notify_card_brief_preview_truncated():
     brief = "A" * 200   # longer than 100 chars
     card = build_notify_card(date="2026-06-30", items=[_item()],
                              brief=brief, site_url="https://example.com")
-    body = json.dumps(card)
+    body = json.dumps(card, ensure_ascii=False)
     assert "A" * 100 in body
-    assert "A" * 101 not in body or "…" in body
+    assert "A" * 101 not in body
+    assert "…" in body
 
 
 def test_build_notify_card_header_red_when_urgent():
@@ -62,7 +66,6 @@ def test_build_notify_card_has_link_button():
 
 
 def test_send_notify_posts_card():
-    from src.config import Config
     cfg = Config(llm_api_key="k", llm_base_url="u", llm_model="m",
                  feishu_bot_webhook="https://webhook.example.com")
     with patch("httpx.post") as mock_post:
