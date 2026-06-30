@@ -2,11 +2,11 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Daily collector of 35+ global automotive news articles with Zhipu GLM-4-flash 100-word English summaries, pushed to Feishu group bot as interactive cards every morning at 09:00 Beijing time.
+**Goal:** Daily collector of 35+ global automotive news articles with Zhipu GLM-4-flash 100-word English summaries, published to a GitHub Pages static website (date-sidebar + search) and notified via a single Feishu bot link card every morning at 09:00 Beijing time.
 
-**Architecture:** Pure RSS + regulatory API (Method A). feedparser pulls ~65 RSS feeds; httpx fetches SAMR/RAPEX/KBA regulatory data; GLM-4-flash generates summaries concurrently; feishu.py posts interactive card to webhook. GitHub Actions cron runs daily, stores daily reports as Markdown files in git.
+**Architecture:** Pure RSS + regulatory API (Method A). feedparser pulls ~65 RSS feeds; httpx fetches SAMR/RAPEX regulatory data; GLM-4-flash generates summaries concurrently; `build_site.py` renders all reports into a single `site/index.html` (Jinja2 + Fuse.js); GitHub Pages hosts the site; feishu.py posts one short notification card with the page link. GitHub Actions cron runs daily, commits Markdown reports and rebuilt site to git.
 
-**Tech Stack:** Python 3.12, uv, feedparser, httpx, openai (OpenAI-compatible, points to 智谱), tenacity, python-dotenv, pytest, ruff. Mirrors humanoid-tech-ops structure exactly.
+**Tech Stack:** Python 3.12, uv, feedparser, httpx, openai (OpenAI-compatible, points to 智谱), tenacity, python-dotenv, jinja2, pytest, ruff. Frontend: vanilla HTML/CSS/JS + Fuse.js (CDN). Mirrors humanoid-tech-ops structure exactly.
 
 ---
 
@@ -1679,6 +1679,734 @@ git push
 
 ---
 
+### Task 9 (REVISED): Feishu Delivery — Notification Card Only
+
+**Files:**
+- Create: `src/delivery/feishu.py`
+- Create: `tests/test_feishu.py`
+
+Feishu now sends **one short notification card** (not full content) pointing to the GitHub Pages site.
+
+**Step 1: Write failing tests**
+
+```python
+# tests/test_feishu.py
+from unittest.mock import patch, MagicMock
+from src.schemas import NewsItem
+from src.delivery.feishu import build_notify_card, send_notify
+
+def _item(priority: str, brand: str = "") -> NewsItem:
+    item = NewsItem(url="https://x.com", title="t", source_name="s",
+                    region="r", published_at="", raw_text="")
+    item.priority = priority
+    item.brand = brand
+    return item
+
+def test_build_notify_card_returns_dict():
+    items = [_item("P0", "Li Auto"), _item("P1", "Li Auto"), _item("P2", "BYD")]
+    card = build_notify_card(items, date="2026-06-29",
+                             site_url="https://user.github.io/automotive-news-daily")
+    assert card["msg_type"] == "interactive"
+    assert "card" in card
+
+def test_build_notify_card_includes_counts():
+    items = [_item("P0"), _item("P1"), _item("P2"), _item("P2"), _item("P3")]
+    card = build_notify_card(items, date="2026-06-29", site_url="https://s.io")
+    content = str(card)
+    assert "P0" in content or "🚨" in content
+    assert "5" in content  # total count
+
+def test_send_notify_posts_once():
+    with patch("httpx.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200)
+        send_notify([_item("P3")], webhook="https://wh.example.com",
+                    date="2026-06-29", site_url="https://s.io")
+    assert mock_post.call_count == 1
+```
+
+**Step 2: Run to verify FAIL**
+
+```bash
+ept uv run pytest tests/test_feishu.py -v
+```
+
+**Step 3: Write src/delivery/feishu.py**
+
+```python
+"""Feishu group bot: send one short notification card with site link."""
+import logging
+import httpx
+from src.schemas import NewsItem
+
+logger = logging.getLogger(__name__)
+
+def build_notify_card(items: list[NewsItem], date: str, site_url: str) -> dict:
+    counts = {"P0": 0, "P1": 0, "P2": 0, "P3": 0}
+    for item in items:
+        counts[item.priority] = counts.get(item.priority, 0) + 1
+
+    parts = []
+    if counts["P0"]:
+        parts.append(f"🚨 质量预警 **{counts['P0']}** 条")
+    if counts["P1"]:
+        parts.append(f"⭐ 理想汽车 **{counts['P1']}** 条")
+    if counts["P2"]:
+        parts.append(f"🇨🇳 中国品牌 **{counts['P2']}** 条")
+    if counts["P3"]:
+        parts.append(f"🌍 国际品牌 **{counts['P3']}** 条")
+
+    summary_line = "  |  ".join(parts)
+    page_url = f"{site_url.rstrip('/')}?date={date}"
+
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": f"🚗 汽车日报  {date}  |  {len(items)} 条",
+                },
+                "template": "blue",
+            },
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {"tag": "lark_md", "content": summary_line},
+                },
+                {
+                    "tag": "action",
+                    "actions": [{
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "📖 查看全文"},
+                        "url": page_url,
+                        "type": "primary",
+                    }],
+                },
+            ],
+        },
+    }
+
+def send_notify(items: list[NewsItem], webhook: str, date: str, site_url: str) -> None:
+    card = build_notify_card(items, date=date, site_url=site_url)
+    try:
+        resp = httpx.post(webhook, json=card, timeout=15)
+        resp.raise_for_status()
+        logger.info("feishu notify sent (%d items)", len(items))
+    except Exception as ex:
+        logger.error("feishu notify failed: %s", ex)
+```
+
+**Step 4: Run to verify PASS**
+
+```bash
+ept uv run pytest tests/test_feishu.py -v
+```
+
+Expected: 3 passed.
+
+**Step 5: Commit**
+
+```bash
+git add src/delivery/feishu.py tests/test_feishu.py
+git commit -m "feat: feishu notification card with site link"
+```
+
+---
+
+### Task 11 (REVISED): Static Site Builder
+
+**Files:**
+- Create: `src/site_builder.py`
+- Create: `src/templates/index.html.j2`
+- Create: `entrypoints/build_site.py`
+- Create: `tests/test_site_builder.py`
+- Modify: `pyproject.toml` — add `jinja2>=3.1.0` to dependencies
+
+**Step 1: Add jinja2 to pyproject.toml**
+
+```toml
+dependencies = [
+    "openai>=1.40.0",
+    "feedparser>=6.0.11",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.1",
+    "tenacity>=8.5.0",
+    "jinja2>=3.1.0",   # ← add this line
+]
+```
+
+Run: `ept uv sync`
+
+**Step 2: Write failing tests**
+
+```python
+# tests/test_site_builder.py
+import json
+from pathlib import Path
+from src.site_builder import parse_report_md, build_site
+
+_SAMPLE_MD = """# 汽车行业日报 2026-06-29
+
+> 3 条新闻
+
+## 🚨 质量预警 & 召回
+
+### **[Li Auto]** 理想汽车召回 L9
+> Li Auto has initiated a recall of 1200 units.
+- 来源: [samr.gov.cn](https://samr.gov.cn/1)
+- 地区: 中亚
+
+## 🌍 国际品牌动态
+
+### Toyota new hybrid lineup
+> Toyota announced new hybrid models.
+- 来源: [reuters.com](https://reuters.com/2)
+- 地区: 全球
+"""
+
+def test_parse_report_md_extracts_articles(tmp_path):
+    md_file = tmp_path / "2026-06-29.md"
+    md_file.write_text(_SAMPLE_MD, encoding="utf-8")
+    articles = parse_report_md(md_file)
+    assert len(articles) == 2
+    assert articles[0]["priority"] == "P0"
+    assert articles[0]["brand"] == "Li Auto"
+    assert articles[0]["region"] == "中亚"
+    assert "1200 units" in articles[0]["summary"]
+
+def test_parse_report_md_sets_correct_priority():
+    from pathlib import Path
+    import tempfile
+    md = "# 汽车行业日报 2026-06-28\n\n## ⭐ 理想汽车动态\n\n### 理想 Q2 增长\n> Li Auto grew.\n- 来源: [x](https://x.com)\n- 地区: 欧洲\n"
+    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False, encoding="utf-8") as f:
+        f.write(md)
+        path = Path(f.name)
+    articles = parse_report_md(path)
+    assert articles[0]["priority"] == "P1"
+
+def test_build_site_generates_html(tmp_path):
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    (reports_dir / "2026-06-29.md").write_text(_SAMPLE_MD, encoding="utf-8")
+    site_dir = tmp_path / "site"
+    build_site(reports_dir=reports_dir, site_dir=site_dir)
+    index = site_dir / "index.html"
+    assert index.exists()
+    content = index.read_text(encoding="utf-8")
+    assert "2026-06-29" in content
+    assert "Fuse" in content or "fuse" in content  # Fuse.js loaded
+    assert "理想汽车召回" in content
+```
+
+**Step 3: Run to verify FAIL**
+
+```bash
+ept uv run pytest tests/test_site_builder.py -v
+```
+
+**Step 4: Write src/site_builder.py**
+
+```python
+"""Parse daily Markdown reports and render into a single-page static site."""
+import json
+import logging
+import re
+from pathlib import Path
+from jinja2 import Environment, FileSystemLoader
+
+logger = logging.getLogger(__name__)
+
+_SECTION_PRIORITY = {
+    "🚨 质量预警 & 召回": "P0",
+    "⭐ 理想汽车动态": "P1",
+    "🇨🇳 中国品牌出海": "P2",
+    "🌍 国际品牌动态": "P3",
+}
+
+def parse_report_md(path: Path) -> list[dict]:
+    """Parse a daily report Markdown into a list of article dicts."""
+    text = path.read_text(encoding="utf-8")
+    date = path.stem  # "2026-06-29"
+
+    articles: list[dict] = []
+    current_priority = "P3"
+
+    for line in text.splitlines():
+        # Section header: ## 🚨 质量预警 & 召回
+        for section, prio in _SECTION_PRIORITY.items():
+            if line.startswith("## ") and section in line:
+                current_priority = prio
+                break
+        # Article title: ### **[Li Auto]** 理想汽车召回 L9
+        m = re.match(r"^### (?:\*\*\[(.+?)\]\*\* )?(.+)$", line)
+        if m:
+            brand = m.group(1) or ""
+            title = m.group(2).strip()
+            articles.append({
+                "date": date,
+                "priority": current_priority,
+                "brand": brand,
+                "title": title,
+                "summary": "",
+                "source_name": "",
+                "source_url": "",
+                "region": "",
+            })
+            continue
+        # Summary line: > Li Auto has initiated...
+        if line.startswith("> ") and articles:
+            articles[-1]["summary"] = line[2:].strip()
+            continue
+        # Source: - 来源: [samr.gov.cn](https://...)
+        m2 = re.match(r"^- 来源: \[(.+?)\]\((.+?)\)$", line)
+        if m2 and articles:
+            articles[-1]["source_name"] = m2.group(1)
+            articles[-1]["source_url"] = m2.group(2)
+            continue
+        # Region: - 地区: 中亚
+        m3 = re.match(r"^- 地区: (.+)$", line)
+        if m3 and articles:
+            articles[-1]["region"] = m3.group(1).strip()
+
+    return articles
+
+def build_site(reports_dir: Path, site_dir: Path) -> None:
+    """Read all reports/*.md, render site/index.html."""
+    site_dir.mkdir(parents=True, exist_ok=True)
+
+    all_articles: list[dict] = []
+    dates: list[str] = []
+
+    for md_file in sorted(reports_dir.glob("*.md"), reverse=True):
+        articles = parse_report_md(md_file)
+        if articles:
+            all_articles.extend(articles)
+            dates.append(md_file.stem)
+
+    articles_json = json.dumps(all_articles, ensure_ascii=False)
+    dates_json = json.dumps(dates, ensure_ascii=False)
+
+    templates_dir = Path(__file__).parent / "templates"
+    env = Environment(loader=FileSystemLoader(str(templates_dir)))
+    tmpl = env.get_template("index.html.j2")
+    html = tmpl.render(articles_json=articles_json, dates_json=dates_json,
+                       total=len(all_articles), date_count=len(dates))
+
+    (site_dir / "index.html").write_text(html, encoding="utf-8")
+    logger.info("site built: %d articles across %d days → %s",
+                len(all_articles), len(dates), site_dir / "index.html")
+```
+
+**Step 5: Create src/templates/ directory**
+
+```bash
+mkdir -p src/templates
+```
+
+**Step 6: Write src/templates/index.html.j2**
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>汽车行业日报</title>
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           display: flex; height: 100vh; overflow: hidden; background: #f5f5f5; }
+
+    /* ── Sidebar ─────────────────────────────────────────────── */
+    #sidebar {
+      width: 260px; min-width: 200px; background: #fff;
+      border-right: 1px solid #e0e0e0; display: flex;
+      flex-direction: column; overflow: hidden;
+    }
+    #search-box {
+      padding: 12px; border-bottom: 1px solid #e0e0e0;
+    }
+    #search-input {
+      width: 100%; padding: 8px 12px; border: 1px solid #ddd;
+      border-radius: 20px; font-size: 14px; outline: none;
+    }
+    #search-input:focus { border-color: #1677ff; }
+    #date-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+    details { border-bottom: 1px solid #f0f0f0; }
+    summary {
+      padding: 10px 16px; cursor: pointer; font-weight: 600;
+      font-size: 13px; list-style: none; display: flex;
+      align-items: center; gap: 6px; user-select: none;
+      color: #333;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: "▶"; font-size: 10px; color: #999; transition: transform .2s; }
+    details[open] summary::before { transform: rotate(90deg); }
+    summary:hover { background: #f5f5f5; }
+    .date-articles { padding: 4px 0; }
+    .date-article-link {
+      display: block; padding: 6px 16px 6px 32px;
+      font-size: 12px; color: #555; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      text-decoration: none;
+    }
+    .date-article-link:hover { background: #f0f7ff; color: #1677ff; }
+    .badge { font-size: 10px; padding: 1px 5px; border-radius: 8px;
+             color: #fff; margin-left: 4px; }
+    .badge-p0 { background: #ff4d4f; }
+    .badge-p1 { background: #faad14; }
+    .badge-count { background: #8c8c8c; font-size: 10px; margin-left: auto; }
+
+    /* ── Main content ─────────────────────────────────────────── */
+    #main { flex: 1; overflow-y: auto; padding: 24px; }
+    #header { margin-bottom: 20px; }
+    #header h1 { font-size: 20px; color: #1a1a1a; }
+    #header .sub { font-size: 13px; color: #888; margin-top: 4px; }
+    #no-results { display: none; color: #999; padding: 40px; text-align: center; }
+
+    .section-header {
+      font-size: 15px; font-weight: 700; margin: 24px 0 12px;
+      padding-bottom: 6px; border-bottom: 2px solid #e8e8e8; color: #333;
+    }
+    .article-card {
+      background: #fff; border-radius: 8px; padding: 16px;
+      margin-bottom: 12px; border: 1px solid #eee;
+      transition: box-shadow .15s;
+    }
+    .article-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .article-card[data-priority="P0"] { border-left: 4px solid #ff4d4f; }
+    .article-card[data-priority="P1"] { border-left: 4px solid #faad14; }
+    .article-card[data-priority="P2"] { border-left: 4px solid #52c41a; }
+    .article-card[data-priority="P3"] { border-left: 4px solid #1677ff; }
+    .card-title { font-size: 14px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px; }
+    .card-brand { display: inline-block; font-size: 11px; padding: 1px 6px;
+                  background: #e6f4ff; color: #1677ff; border-radius: 4px;
+                  margin-right: 6px; }
+    .card-summary { font-size: 13px; color: #555; line-height: 1.6; margin-bottom: 8px; }
+    .card-meta { font-size: 12px; color: #999; display: flex; gap: 12px; flex-wrap: wrap; }
+    .card-meta a { color: #1677ff; text-decoration: none; }
+    .card-meta a:hover { text-decoration: underline; }
+    mark { background: #fff3b0; border-radius: 2px; padding: 0 1px; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="search-box">
+    <input id="search-input" type="search" placeholder="🔍 搜索新闻…" autocomplete="off">
+  </div>
+  <div id="date-list"></div>
+</div>
+
+<div id="main">
+  <div id="header">
+    <h1 id="main-title">🚗 汽车行业日报</h1>
+    <div class="sub" id="main-sub">共 {{ total }} 条  |  {{ date_count }} 天</div>
+  </div>
+  <div id="no-results">没有找到相关新闻</div>
+  <div id="content"></div>
+</div>
+
+<script>
+const ARTICLES = {{ articles_json }};
+const DATES = {{ dates_json }};
+
+const SECTIONS = [
+  { priority: "P0", label: "🚨 质量预警 & 召回" },
+  { priority: "P1", label: "⭐ 理想汽车动态" },
+  { priority: "P2", label: "🇨🇳 中国品牌出海" },
+  { priority: "P3", label: "🌍 国际品牌动态" },
+];
+
+let currentDate = DATES[0] || null;
+let searchQuery = "";
+
+// ── Fuse.js search index ───────────────────────────────────────────────────
+const fuse = new Fuse(ARTICLES, {
+  keys: ["title", "summary", "brand", "region", "source_name"],
+  threshold: 0.35,
+  includeMatches: true,
+  minMatchCharLength: 2,
+});
+
+// ── Sidebar: build date list ───────────────────────────────────────────────
+function buildSidebar() {
+  const container = document.getElementById("date-list");
+  container.innerHTML = "";
+  DATES.forEach(date => {
+    const dayArticles = ARTICLES.filter(a => a.date === date);
+    const p0count = dayArticles.filter(a => a.priority === "P0").length;
+    const details = document.createElement("details");
+    if (date === currentDate && !searchQuery) details.open = true;
+
+    const summary = document.createElement("summary");
+    summary.innerHTML = `📅 ${date}
+      ${p0count ? `<span class="badge badge-p0">🚨${p0count}</span>` : ""}
+      <span class="badge badge-count">${dayArticles.length}</span>`;
+    summary.addEventListener("click", (e) => {
+      // single click on summary sets active date (details toggle is default)
+      if (!e.target.closest("a")) {
+        currentDate = date;
+        searchQuery = "";
+        document.getElementById("search-input").value = "";
+        renderMain();
+        buildSidebar();
+      }
+    });
+    details.appendChild(summary);
+
+    const list = document.createElement("div");
+    list.className = "date-articles";
+    dayArticles.slice(0, 8).forEach(a => {
+      const link = document.createElement("a");
+      link.className = "date-article-link";
+      link.href = "#";
+      link.title = a.title;
+      link.textContent = (a.brand ? `[${a.brand}] ` : "") + a.title;
+      link.addEventListener("click", ev => {
+        ev.preventDefault();
+        currentDate = date;
+        searchQuery = "";
+        document.getElementById("search-input").value = "";
+        renderMain();
+        buildSidebar();
+        // scroll to article
+        const el = document.getElementById("a-" + ARTICLES.indexOf(a));
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      list.appendChild(link);
+    });
+    details.appendChild(list);
+    container.appendChild(details);
+  });
+}
+
+// ── Highlight search matches ───────────────────────────────────────────────
+function highlight(text, query) {
+  if (!query) return escHtml(text);
+  const re = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
+  return escHtml(text).replace(re, "<mark>$1</mark>");
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// ── Render main content ────────────────────────────────────────────────────
+function renderMain() {
+  const content = document.getElementById("content");
+  const noResults = document.getElementById("no-results");
+  const title = document.getElementById("main-title");
+  const sub = document.getElementById("main-sub");
+  content.innerHTML = "";
+
+  let articles;
+  if (searchQuery.length >= 2) {
+    const results = fuse.search(searchQuery);
+    articles = results.map(r => r.item);
+    title.textContent = `🔍 搜索: ${searchQuery}`;
+    sub.textContent = `找到 ${articles.length} 条相关新闻`;
+  } else {
+    articles = ARTICLES.filter(a => a.date === currentDate);
+    title.textContent = `🚗 汽车日报  ${currentDate || ""}`;
+    sub.textContent = `${articles.length} 条新闻`;
+  }
+
+  if (!articles.length) {
+    noResults.style.display = "block";
+    return;
+  }
+  noResults.style.display = "none";
+
+  SECTIONS.forEach(({ priority, label }) => {
+    const group = articles.filter(a => a.priority === priority);
+    if (!group.length) return;
+    const sh = document.createElement("div");
+    sh.className = "section-header";
+    sh.textContent = `${label}  (${group.length})`;
+    content.appendChild(sh);
+    group.forEach((a, i) => {
+      const idx = ARTICLES.indexOf(a);
+      const card = document.createElement("div");
+      card.className = "article-card";
+      card.id = "a-" + idx;
+      card.dataset.priority = a.priority;
+      card.innerHTML = `
+        <div class="card-title">
+          ${a.brand ? `<span class="card-brand">${escHtml(a.brand)}</span>` : ""}
+          ${highlight(a.title, searchQuery)}
+        </div>
+        <div class="card-summary">${highlight(a.summary || a.title, searchQuery)}</div>
+        <div class="card-meta">
+          <a href="${escHtml(a.source_url)}" target="_blank" rel="noopener">
+            🔗 ${escHtml(a.source_name)}</a>
+          <span>📍 ${escHtml(a.region)}</span>
+          <span>📅 ${escHtml(a.date)}</span>
+        </div>`;
+      content.appendChild(card);
+    });
+  });
+}
+
+// ── Search handler ─────────────────────────────────────────────────────────
+document.getElementById("search-input").addEventListener("input", e => {
+  searchQuery = e.target.value.trim();
+  renderMain();
+  if (!searchQuery) buildSidebar();
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+buildSidebar();
+renderMain();
+</script>
+</body>
+</html>
+```
+
+**Step 7: Write entrypoints/build_site.py**
+
+```python
+"""Build static site from all reports/*.md → site/index.html."""
+import logging
+import sys
+from pathlib import Path
+from src.site_builder import build_site
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+REPORTS_DIR = Path("reports")
+SITE_DIR = Path("site")
+
+if __name__ == "__main__":
+    build_site(reports_dir=REPORTS_DIR, site_dir=SITE_DIR)
+    sys.exit(0)
+```
+
+**Step 8: Run tests to verify PASS**
+
+```bash
+ept uv run pytest tests/test_site_builder.py -v
+```
+
+Expected: 3 passed.
+
+**Step 9: Commit**
+
+```bash
+git add src/site_builder.py src/templates/index.html.j2 entrypoints/build_site.py \
+        tests/test_site_builder.py pyproject.toml
+git commit -m "feat: static site builder with date sidebar + fuse.js search"
+```
+
+---
+
+### Task 12 (REVISED): GitHub Actions — with Pages Deployment
+
+**Files:**
+- Modify: `.github/workflows/collect-daily.yml` (replace the previously drafted version)
+- Create: `.github/workflows/pages.yml`
+
+**Step 1: Write .github/workflows/collect-daily.yml**
+
+```yaml
+name: collect-daily
+
+on:
+  schedule:
+    - cron: '0 1 * * *'     # 01:00 UTC = 09:00 Beijing
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UV_INDEX_URL: https://pypi.org/simple
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      - run: uv sync
+
+      - name: Collect and summarize
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: https://open.bigmodel.cn/api/paas/v4/
+          LLM_MODEL: glm-4-flash
+          FEISHU_BOT_WEBHOOK: ${{ secrets.FEISHU_BOT_WEBHOOK }}
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+        run: uv run python -m entrypoints.collect_daily
+
+      - name: Build static site
+        run: uv run python entrypoints/build_site.py
+
+      - name: Commit reports + seen.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/ data/seen.json
+          git diff --cached --quiet || git commit -m "chore: daily report $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+  deploy-pages:
+    needs: collect
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+**Step 2: Update collect_daily.py to pass SITE_URL to send_notify**
+
+In `entrypoints/collect_daily.py`, update the imports and send call:
+
+```python
+# add to imports:
+import os
+from src.delivery.feishu import send_notify  # (was send_card)
+
+# replace send_card call with:
+site_url = os.environ.get("SITE_URL", "https://github.com")
+send_notify(summarized, webhook=cfg.feishu_bot_webhook, date=today, site_url=site_url)
+```
+
+**Step 3: Enable GitHub Pages in repo settings**
+
+After pushing:
+1. Go to repo Settings → Pages
+2. Source: **GitHub Actions** (not branch)
+3. Save
+
+**Step 4: Commit**
+
+```bash
+git add .github/workflows/collect-daily.yml entrypoints/collect_daily.py
+git commit -m "ci: add github pages deployment to daily workflow"
+```
+
+---
+
 ## Environment Variables Reference
 
 | Variable | Source | Description |
@@ -1687,6 +2415,7 @@ git push
 | `LLM_BASE_URL` | Hardcoded in workflow | `https://open.bigmodel.cn/api/paas/v4/` |
 | `LLM_MODEL` | Hardcoded in workflow | `glm-4-flash` |
 | `FEISHU_BOT_WEBHOOK` | Copy from humanoid-tech-ops | Group bot webhook URL |
+| `SITE_URL` | Auto-generated in workflow | `https://<owner>.github.io/<repo>` |
 
 ## Feed Verification Checklist
 
