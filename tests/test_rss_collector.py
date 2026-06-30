@@ -21,7 +21,7 @@ def test_rss_collector_returns_news_items():
 
 def test_rss_collector_skips_failed_feed():
     with patch("feedparser.parse", side_effect=Exception("timeout")):
-        collector = RssCollector(feeds=["https://bad.example.com/rss"], region="全球")
+        collector = RssCollector(feeds=["https://bad.example.com/rss"], region="北美")
         items = collector.collect()
     assert items == []
 
@@ -29,6 +29,6 @@ def test_rss_collector_deduplicates_within_batch():
     entry = MagicMock(**_FAKE_ENTRY)
     with patch("feedparser.parse") as mock_parse:
         mock_parse.return_value = MagicMock(entries=[entry, entry])
-        collector = RssCollector(feeds=["https://a.com/rss", "https://b.com/rss"], region="全球")
+        collector = RssCollector(feeds=["https://a.com/rss", "https://b.com/rss"], region="北美")
         items = collector.collect()
     assert len(items) == 1

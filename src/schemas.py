@@ -18,6 +18,9 @@ class NewsItem:
     priority: Priority = "P3"
     brand: str = ""
     summary: str = ""
+    score: int = -1       # -1 = not evaluated; 0-3 = quality-director relevance
+    note: str = ""        # ≤30-word business implication (score≥2 only)
+    market: str = ""      # LLM-determined market (overrides collector region for display)
 
     @property
     def hash_id(self) -> str:

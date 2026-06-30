@@ -8,7 +8,7 @@ def test_url_hash_different():
 
 def test_news_item_hash_id():
     item = NewsItem(url="https://x.com/1", title="T", source_name="s",
-                    region="欧洲", published_at="", raw_text="")
+                    region="西欧", published_at="", raw_text="")
     assert len(item.hash_id) == 16
 
 def test_news_item_defaults():
@@ -17,3 +17,10 @@ def test_news_item_defaults():
     assert item.priority == "P3"
     assert item.brand == ""
     assert item.summary == ""
+
+def test_news_item_has_score_and_note():
+    item = NewsItem(url="https://x.com", title="t", source_name="s",
+                    region="r", published_at="", raw_text="")
+    assert item.score == -1        # -1 = not yet evaluated
+    assert item.note == ""
+    assert item.market == ""
